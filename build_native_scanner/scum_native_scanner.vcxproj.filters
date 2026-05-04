@@ -1,0 +1,66 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="18.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="C:\Users\Nezeryxs\source\repos\ScumChecker\native_scanner\NativeScannerApi.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Nezeryxs\source\repos\ScumChecker\native_scanner\ScannerShared.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Nezeryxs\source\repos\ScumChecker\native_scanner\FileScanner.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Nezeryxs\source\repos\ScumChecker\native_scanner\ProcessScanner.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Nezeryxs\source\repos\ScumChecker\native_scanner\DriverScanner.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Nezeryxs\source\repos\ScumChecker\native_scanner\RegistryScanner.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Nezeryxs\source\repos\ScumChecker\native_scanner\SteamScanner.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Nezeryxs\source\repos\ScumChecker\native_scanner\RiskAnalyzer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="C:\Users\Nezeryxs\source\repos\ScumChecker\native_scanner\NativeScannerApi.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Nezeryxs\source\repos\ScumChecker\native_scanner\ScannerShared.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Nezeryxs\source\repos\ScumChecker\native_scanner\FileScanner.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Nezeryxs\source\repos\ScumChecker\native_scanner\ProcessScanner.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Nezeryxs\source\repos\ScumChecker\native_scanner\DriverScanner.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Nezeryxs\source\repos\ScumChecker\native_scanner\RegistryScanner.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Nezeryxs\source\repos\ScumChecker\native_scanner\SteamScanner.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Nezeryxs\source\repos\ScumChecker\native_scanner\RiskAnalyzer.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="C:\Users\Nezeryxs\source\repos\ScumChecker\native_scanner\CMakeLists.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Header Files">
+      <UniqueIdentifier>{18B92D7D-7943-3F75-84E9-E5D683DFBDFC}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{C0CC3512-BBF3-36B1-A5C4-A84BDBEF900C}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

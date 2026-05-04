@@ -1,0 +1,10 @@
+^C:\USERS\NEZERYXS\SOURCE\REPOS\SCUMCHECKER\BUILD_NATIVE_SCANNER\CMAKEFILES\30F8F2A4911AFA524ABA5AEA5AFE4558\GENERATE.STAMP.RULE
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -SC:/Users/Nezeryxs/source/repos/ScumChecker/native_scanner -BC:/Users/Nezeryxs/source/repos/ScumChecker/build_native_scanner --check-stamp-list CMakeFiles/generate.stamp.list --vs-solution-file C:/Users/Nezeryxs/source/repos/ScumChecker/build_native_scanner/scum_native_scanner.slnx
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd

@@ -1388,7 +1388,7 @@ namespace ScumChecker
             linkGitHub.Size = new Size(120, 15);
             linkGitHub.TabIndex = 0;
             linkGitHub.TabStop = true;
-            linkGitHub.Text = "github.com/Nezeryxs";
+            linkGitHub.Text = "github.com/ifny75";
             linkGitHub.VisitedLinkColor = Color.FromArgb(160, 120, 255);
             // 
             // linkBio
@@ -1401,7 +1401,7 @@ namespace ScumChecker
             linkBio.Size = new Size(92, 15);
             linkBio.TabIndex = 1;
             linkBio.TabStop = true;
-            linkBio.Text = "e-z.bio/nezeryxs";
+            linkBio.Text = "e-z.bio/ifny";
             linkBio.VisitedLinkColor = Color.FromArgb(160, 120, 255);
             // 
             // Form1
@@ -1423,7 +1423,7 @@ namespace ScumChecker
             MinimizeBox = false;
             Name = "Form1";
             StartPosition = FormStartPosition.CenterScreen;
-            Text = "ScumChecker - build: Release";
+            Text = "ScumChecker - by ifny75 / @imifny";
             Load += Form1_Load;
             panelSidebar.ResumeLayout(false);
             panelFooter.ResumeLayout(false);

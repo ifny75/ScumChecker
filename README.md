@@ -173,8 +173,8 @@ You are free to use, modify, and distribute it with attribution.
 ## 👤 Автор / Author
 
 **nezeryxs**  
-GitHub: https://github.com/Nezeryxs  
-Bio: https://e-z.bio/nezeryxs  
+GitHub: https://github.com/ifny75  
+Bio: https://e-z.bio/ifny 
 
 > В разработке проекта использовались вспомогательные AI-инструменты (ChatGPT).  
 > Parts of this project were developed with the assistance of AI tools (ChatGPT).

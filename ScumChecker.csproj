@@ -17,6 +17,9 @@
 
 	<ItemGroup>
 		<Content Include="logo.ico" />
+		<Content Include="native_scanner\rules.json">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</Content>
 	</ItemGroup>
 
 	<ItemGroup>

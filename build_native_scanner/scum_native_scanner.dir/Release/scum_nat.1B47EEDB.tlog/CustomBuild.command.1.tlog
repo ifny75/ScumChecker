@@ -1,0 +1,10 @@
+^C:\USERS\NEZERYXS\SOURCE\REPOS\SCUMCHECKER\NATIVE_SCANNER\CMAKELISTS.TXT
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -SC:/Users/Nezeryxs/source/repos/ScumChecker/native_scanner -BC:/Users/Nezeryxs/source/repos/ScumChecker/build_native_scanner --check-stamp-file C:/Users/Nezeryxs/source/repos/ScumChecker/build_native_scanner/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd

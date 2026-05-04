@@ -1,0 +1,3 @@
+C:/Users/Nezeryxs/source/repos/ScumChecker/build_native_scanner/CMakeFiles/scum_native_scanner.dir
+C:/Users/Nezeryxs/source/repos/ScumChecker/build_native_scanner/CMakeFiles/ALL_BUILD.dir
+C:/Users/Nezeryxs/source/repos/ScumChecker/build_native_scanner/CMakeFiles/ZERO_CHECK.dir

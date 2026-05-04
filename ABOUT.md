@@ -52,7 +52,7 @@ ScumChecker:
 ## Автор
 
 **nezeryxs**  
-GitHub: https://github.com/Nezeryxs  
-Bio: https://e-z.bio/nezeryxs  
+GitHub: https://github.com/ifny75
+Bio: https://e-z.bio/ifny 
 
 > Проект создан при помощи ChatGPT

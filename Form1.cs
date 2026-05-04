@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
@@ -13,6 +14,7 @@ using System.Windows.Forms;
 using System.Runtime.InteropServices;
 
 using ScumChecker.Core;
+using ScumChecker.Core.Modules;
 using ScumChecker.Core.Tools;
 using ScumChecker.Core.Steam;
 using ScumChecker.Controls;
@@ -50,6 +52,7 @@ namespace ScumChecker
         private CancellationTokenSource? _cts;
 
         private readonly List<ScanItem> _allItems = new();
+        private readonly List<ScanItem> _steamItems = new();
         private List<ToolEntry> _tools = new();
 
         private string _lang = "RU"; // RU / EN
@@ -75,33 +78,61 @@ namespace ScumChecker
         private FlowLayoutPanel? _flowSteam;
         private static readonly Size SteamCardSize = new Size(210, 250);
         private static readonly Padding SteamCardMargin = new Padding(12);
+        private readonly SemaphoreSlim _steamRefreshLock = new(1, 1);
+        private int _steamRefreshScheduled = 0;
+        private readonly Dictionary<string, SteamAccountCard> _steamCardsById = new(StringComparer.OrdinalIgnoreCase);
+
+        // ===== Misc page UI (spoofers / driver-memory / other high-noise detections)
+        private Panel? _pageMisc;
+        private Button? _btnNavMisc;
+        private FlowLayoutPanel? _flowMisc;
+        private Label? _lblMiscTitle;
+        private Label? _lblMiscDesc;
+        private Label? _lblMiscStats;
+        private Panel? _pageDocs;
+        private Button? _btnNavDocs;
+        private FlowLayoutPanel? _flowDocs;
+        private Label? _lblDocsTitle;
+        private Label? _lblDocsDesc;
 
         public Form1()
         {
             InitializeComponent();
 
-            button3akrit.Click += (_, __) => Close();
-            buttonSvernut.Click += (_, __) => WindowState = FormWindowState.Minimized;
+            button3akrit.Visible = false;
+            buttonSvernut.Visible = false;
+            button3akrit.Enabled = false;
+            buttonSvernut.Enabled = false;
 
             PanelLogo.MouseDown += Title_MouseDown;
             PanelLogo.MouseMove += Title_MouseMove;
             PanelLogo.MouseUp += Title_MouseUp;
 
             StartPosition = FormStartPosition.CenterScreen;
-            MaximumSize = new Size(1220, 720); // или под дизайн
-            MinimumSize = new Size(1200, 700);
+            MaximumSize = Size.Empty;
+            MinimumSize = new Size(1100, 680);
+            Size = new Size(1280, 760);
 
 
-            FormBorderStyle = FormBorderStyle.None;
-            ControlBox = false;
-            MaximizeBox = false;
-            MinimizeBox = false;
+            FormBorderStyle = FormBorderStyle.Sizable;
+            ControlBox = true;
+            MaximizeBox = true;
+            MinimizeBox = true;
+            WindowState = FormWindowState.Normal;
+
+            panelSidebar.AutoScroll = true;
+            panelSidebar.HorizontalScroll.Enabled = false;
+            panelSidebar.HorizontalScroll.Visible = false;
 
 
             flowQuick.SizeChanged += (_, __) => UpdateQuickSectionWidths();
 
             // Glow sidebar + icons
             UpgradeSidebarButtonsToGlow();
+            InitDocsPageUi();
+            InitMiscPageUi();
+            InitSidebarLinkButtons();
+            EnsureSidebarNavOrder();
 
             // top icons
             TryApply("btnScan", () => Properties.Resources.icon_scan, btnScan);
@@ -115,6 +146,10 @@ namespace ScumChecker
             // NAV
             btnNavNative.Click += (_, __) => ShowPage(pageNative, btnNavNative);
             btnNavSteam.Click += (_, __) => ShowPage(pageSteam, btnNavSteam);
+            if (_btnNavDocs != null && _pageDocs != null)
+                _btnNavDocs.Click += (_, __) => ShowPage(_pageDocs, _btnNavDocs);
+            if (_btnNavMisc != null && _pageMisc != null)
+                _btnNavMisc.Click += (_, __) => ShowPage(_pageMisc, _btnNavMisc);
             btnNavTools.Click += (_, __) => ShowPage(pageTools, btnNavTools);
             btnNavQuick.Click += (_, __) => ShowPage(pageQuick, btnNavQuick);
 
@@ -182,6 +217,8 @@ namespace ScumChecker
         private void Title_MouseDown(object? sender, MouseEventArgs e)
         {
             if (e.Button != MouseButtons.Left) return;
+            if (WindowState == FormWindowState.Maximized) return;
+            if (FormBorderStyle != FormBorderStyle.None) return;
             _dragging = true;
             _dragStart = e.Location;
         }
@@ -206,6 +243,7 @@ namespace ScumChecker
         {
             // Steam cards host
             BuildSteamCardsUi();
+            ShowSteamLoadingState();
 
             // Extract bundled tools
             ToolsBundler.EnsureExtracted();
@@ -218,6 +256,37 @@ namespace ScumChecker
 
             // Load tools list
             RefreshToolsTiles();
+
+            _ = LoadSteamAccountsWithoutScanAsync();
+        }
+
+        private async Task LoadSteamAccountsWithoutScanAsync()
+        {
+            try
+            {
+                var steamModule = new SteamAccountsModule();
+                var items = await Task.Run(() =>
+                    steamModule.Run(CancellationToken.None)
+                        .Where(IsSteamAccountItem)
+                        .ToList());
+
+                _steamItems.Clear();
+                _steamItems.AddRange(items);
+                await RefreshSteamCardsAsync();
+            }
+            catch
+            {
+                if (_flowSteam == null) return;
+                SafeUi(() =>
+                {
+                    _flowSteam.Controls.Clear();
+                    var card = CreateSteamCard();
+                    card.SetHeader(T("Steam недоступен", "Steam unavailable"), null);
+                    card.ClearRows();
+                    card.AddRow(T("Не удалось загрузить аккаунты без скана", "Failed to load accounts without scan"), null);
+                    _flowSteam.Controls.Add(card);
+                });
+            }
         }
 
         // =========================================================
@@ -716,6 +785,223 @@ namespace ScumChecker
             });
         }
 
+        private void InitDocsPageUi()
+        {
+            if (panelPages == null || panelSidebar == null)
+                return;
+
+            _pageDocs = new Panel
+            {
+                Name = "pageDocs",
+                Dock = DockStyle.Fill,
+                BackColor = Color.FromArgb(12, 12, 18),
+                Visible = false
+            };
+
+            var panelTopDocs = new Panel
+            {
+                Dock = DockStyle.Top,
+                Height = 74,
+                Padding = new Padding(16, 10, 16, 8),
+                BackColor = Color.FromArgb(18, 18, 28)
+            };
+            ApplyRoundedRegion(panelTopDocs, 14);
+
+            _lblDocsTitle = new Label
+            {
+                Dock = DockStyle.Top,
+                Height = 28,
+                Font = new Font("Segoe UI Semibold", 12f, FontStyle.Bold),
+                ForeColor = Color.White,
+                Text = "Документация"
+            };
+
+            _lblDocsDesc = new Label
+            {
+                Dock = DockStyle.Fill,
+                Font = new Font("Segoe UI", 9f, FontStyle.Regular),
+                ForeColor = Color.Gainsboro,
+                Text = "Сводка по тому, что именно сканируется и как читать результаты."
+            };
+
+            panelTopDocs.Controls.Add(_lblDocsDesc);
+            panelTopDocs.Controls.Add(_lblDocsTitle);
+
+            _flowDocs = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                AutoScroll = true,
+                WrapContents = false,
+                FlowDirection = FlowDirection.TopDown,
+                Padding = new Padding(14),
+                BackColor = Color.FromArgb(12, 12, 18),
+                Name = "flowDocs"
+            };
+
+            _flowDocs.SizeChanged += (_, __) => RefreshDocsCardsLayout();
+
+            _pageDocs.Controls.Add(_flowDocs);
+            _pageDocs.Controls.Add(panelTopDocs);
+            panelPages.Controls.Add(_pageDocs);
+            _pageDocs.BringToFront();
+            _pageDocs.SendToBack();
+
+            _btnNavDocs = new GlowIconButton
+            {
+                Name = "btnNavDocs",
+                Dock = DockStyle.Top,
+                Height = 44,
+                Font = new Font("Segoe UI", 9F, FontStyle.Bold),
+                ForeColor = Color.Gainsboro,
+                BackColor = Color.FromArgb(12, 12, 18),
+                Text = "Документация",
+                UseVisualStyleBackColor = false
+            };
+            _btnNavDocs.FlatStyle = FlatStyle.Flat;
+            _btnNavDocs.FlatAppearance.BorderColor = Color.FromArgb(60, 60, 80);
+            _btnNavDocs.Padding = new Padding(12, 0, 10, 0);
+            TryApply(_btnNavDocs.Name, () => Properties.Resources.icon_tools, _btnNavDocs);
+
+            panelSidebar.Controls.Add(_btnNavDocs);
+            if (panelSidebar.Controls.Contains(btnNavQuick))
+                panelSidebar.Controls.SetChildIndex(_btnNavDocs, panelSidebar.Controls.GetChildIndex(btnNavQuick));
+
+            BuildDocsCards();
+        }
+
+        private void InitMiscPageUi()
+        {
+            if (panelPages == null || panelSidebar == null)
+                return;
+
+            _pageMisc = new Panel
+            {
+                Name = "pageMisc",
+                Dock = DockStyle.Fill,
+                BackColor = Color.FromArgb(12, 12, 18),
+                Visible = false
+            };
+
+            var panelTopMisc = new Panel
+            {
+                Dock = DockStyle.Top,
+                Height = 74,
+                Padding = new Padding(16, 10, 16, 8),
+                BackColor = Color.FromArgb(18, 18, 28)
+            };
+            ApplyRoundedRegion(panelTopMisc, 14);
+
+            _lblMiscTitle = new Label
+            {
+                Dock = DockStyle.Top,
+                Height = 28,
+                Font = new Font("Segoe UI Semibold", 12f, FontStyle.Bold),
+                ForeColor = Color.White,
+                Text = "Прочее"
+            };
+
+            _lblMiscDesc = new Label
+            {
+                Dock = DockStyle.Fill,
+                Font = new Font("Segoe UI", 9f, FontStyle.Regular),
+                ForeColor = Color.Gainsboro,
+                Text = "Сигналы повышенного шума (спуферы/HWID/driver-memory) вынесены сюда."
+            };
+
+            _lblMiscStats = new Label
+            {
+                Dock = DockStyle.Bottom,
+                Height = 18,
+                Font = new Font("Segoe UI", 8.5f, FontStyle.Italic),
+                ForeColor = Color.FromArgb(170, 170, 190),
+                Text = "High: 0 | Medium: 0 | Low: 0"
+            };
+
+            panelTopMisc.Controls.Add(_lblMiscDesc);
+            panelTopMisc.Controls.Add(_lblMiscStats);
+            panelTopMisc.Controls.Add(_lblMiscTitle);
+
+            _flowMisc = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                AutoScroll = true,
+                WrapContents = false,
+                FlowDirection = FlowDirection.TopDown,
+                Padding = new Padding(14),
+                BackColor = Color.FromArgb(12, 12, 18),
+                Name = "flowMisc"
+            };
+            _flowMisc.SizeChanged += (_, __) => RefreshMiscCardsLayout();
+
+            _pageMisc.Controls.Add(_flowMisc);
+            _pageMisc.Controls.Add(panelTopMisc);
+            panelPages.Controls.Add(_pageMisc);
+            _pageMisc.BringToFront();
+            _pageMisc.SendToBack();
+
+            _btnNavMisc = new GlowIconButton
+            {
+                Name = "btnNavMisc",
+                Dock = DockStyle.Top,
+                Height = 44,
+                Font = new Font("Segoe UI", 9F, FontStyle.Bold),
+                ForeColor = Color.Gainsboro,
+                BackColor = Color.FromArgb(12, 12, 18),
+                Text = "Прочее",
+                UseVisualStyleBackColor = false
+            };
+            _btnNavMisc.FlatStyle = FlatStyle.Flat;
+            _btnNavMisc.FlatAppearance.BorderColor = Color.FromArgb(60, 60, 80);
+            _btnNavMisc.Padding = new Padding(12, 0, 10, 0);
+            TryApply(_btnNavMisc.Name, () => Properties.Resources.ico_prefetch, _btnNavMisc);
+
+            panelSidebar.Controls.Add(_btnNavMisc);
+            if (panelSidebar.Controls.Contains(btnNavQuick))
+                panelSidebar.Controls.SetChildIndex(_btnNavMisc, panelSidebar.Controls.GetChildIndex(btnNavQuick));
+        }
+
+        private void InitSidebarLinkButtons()
+        {
+            ConfigureSidebarLinkButton(ezbio, "e-z.bio");
+            ConfigureSidebarLinkButton(Git_button, T("проект создателя", "creator project"));
+        }
+
+        private void EnsureSidebarNavOrder()
+        {
+            // Для Dock=Top порядок "сверху вниз":
+            // Docs -> Native -> Steam -> Quick -> Tools -> Misc.
+            _btnNavDocs?.BringToFront();
+            btnNavNative.BringToFront();
+            btnNavSteam.BringToFront();
+            btnNavQuick.BringToFront();
+            btnNavTools.BringToFront();
+            _btnNavMisc?.BringToFront();
+
+            // Гарантируем доступность новых вкладок через прокрутку, если места мало.
+            int navCount = 4 + (_btnNavDocs != null ? 1 : 0) + (_btnNavMisc != null ? 1 : 0);
+            int navHeight = navCount * 44 + 170;
+            panelSidebar.AutoScrollMinSize = new Size(0, navHeight);
+        }
+
+        private static void ConfigureSidebarLinkButton(Button b, string text)
+        {
+            b.BackgroundImage = null;
+            b.BackgroundImageLayout = ImageLayout.None;
+            b.Text = text;
+            b.ForeColor = Color.FromArgb(215, 215, 230);
+            b.Font = new Font("Segoe UI Semibold", 9f, FontStyle.Bold);
+            b.BackColor = Color.FromArgb(14, 14, 24);
+            b.FlatStyle = FlatStyle.Flat;
+            b.FlatAppearance.BorderSize = 0;
+            b.FlatAppearance.MouseOverBackColor = Color.FromArgb(24, 24, 38);
+            b.FlatAppearance.MouseDownBackColor = Color.FromArgb(34, 34, 52);
+            b.TextAlign = ContentAlignment.MiddleCenter;
+            b.Padding = new Padding(8, 0, 8, 0);
+            b.Height = 38;
+            b.TabStop = false;
+            ApplyRoundedRegion(b, 12);
+        }
+
         // =========================================================
         // NAV
         // =========================================================
@@ -725,11 +1011,15 @@ namespace ScumChecker
             pageSteam.Visible = page == pageSteam;
             pageTools.Visible = page == pageTools;
             pageQuick.Visible = page == pageQuick;
+            if (_pageDocs != null) _pageDocs.Visible = page == _pageDocs;
+            if (_pageMisc != null) _pageMisc.Visible = page == _pageMisc;
 
             SetNavActive(btnNavNative, activeBtn == btnNavNative);
             SetNavActive(btnNavSteam, activeBtn == btnNavSteam);
             SetNavActive(btnNavTools, activeBtn == btnNavTools);
             SetNavActive(btnNavQuick, activeBtn == btnNavQuick);
+            if (_btnNavDocs != null) SetNavActive(_btnNavDocs, activeBtn == _btnNavDocs);
+            if (_btnNavMisc != null) SetNavActive(_btnNavMisc, activeBtn == _btnNavMisc);
 
             if (page == pageQuick)
             {
@@ -1146,10 +1436,14 @@ namespace ScumChecker
         {
             _lang = (lang == "EN") ? "EN" : "RU";
 
-            btnNavNative.Text = T("Проверка процесса игры", "Game process scan");
-            btnNavSteam.Text = T("Проверка аккаунтов", "Accounts check");
+            btnNavNative.Text = T("Сканер процессов", "Process scanner");
+            btnNavSteam.Text = T("Steam аккаунты", "Steam accounts");
             btnNavTools.Text = T("Программы", "Programs");
             btnNavQuick.Text = T("Быстрый доступ", "Quick access");
+            if (_btnNavDocs != null) _btnNavDocs.Text = T("Документация", "Documentation");
+            if (_btnNavMisc != null) _btnNavMisc.Text = T("Прочее", "Other");
+            if (ezbio != null) ezbio.Text = "e-z.bio";
+            if (Git_button != null) Git_button.Text = T("проект создателя", "creator project");
 
             btnOpenRegedit.Text = T("Реестр ПК", "Registry");
             btnOpenTemp.Text = T("Temp", "Temp");
@@ -1170,6 +1464,23 @@ namespace ScumChecker
                 "Below are the Steam accounts previously used on this PC, with detailed information about VAC and game bans."
             );
 
+            if (_lblMiscTitle != null) _lblMiscTitle.Text = T("Прочее", "Other");
+            if (_lblMiscDesc != null)
+            {
+                _lblMiscDesc.Text = T(
+                    "Здесь собраны шумные, но полезные сигналы: HWID-спуф, mapper/spoofer, driver-memory индикаторы.",
+                    "High-noise but useful signals are shown here: HWID spoof, mapper/spoofer, driver-memory indicators."
+                );
+            }
+            if (_lblDocsTitle != null) _lblDocsTitle.Text = T("Документация", "Documentation");
+            if (_lblDocsDesc != null)
+            {
+                _lblDocsDesc.Text = T(
+                    "Кратко: что собирает сканер, какие источники используются и как читать уровни риска.",
+                    "Quick overview: what the scanner collects, which sources are used, and how to read risk levels."
+                );
+            }
+
             lblToolsTitle.Text = T("Утилиты", "Tools for moderation");
             lblToolsDesc.Text = T("Утилиты для администраторов и модераторов", "Utilities for administrators and moderators");
             lblToolsHint.Text = T("Выбери утилиту → Open / Locate / Download", "Select tool → Open / Locate / Download");
@@ -1186,6 +1497,7 @@ namespace ScumChecker
             InitQuickTiles();
             BuildQuickSections();         // 🔥 обязательно                         // WireQuickActions();        // можно НЕ вызывать повторно, иначе нащёлкаешь хендлеры
             UiPost(UpdateQuickSectionWidths);
+            BuildDocsCards();
 
 
 
@@ -1219,9 +1531,10 @@ namespace ScumChecker
 
             _allItems.Clear();
             dgvFindings.Rows.Clear();
+            _flowMisc?.Controls.Clear();
+            if (_lblMiscStats != null) _lblMiscStats.Text = "High: 0 | Medium: 0 | Low: 0";
             txtLog.Clear();
             ResetSummary();
-
             btnScan.Enabled = false;
             btnCancel.Enabled = true;
 
@@ -1261,8 +1574,6 @@ namespace ScumChecker
                     lblStatus.Text = T("Статус: Ожидание", "Status: Idle");
                     SetProgress(0);
                 });
-
-                try { await RefreshSteamCardsAsync(); } catch { }
 
                 _cts?.Dispose();
                 _cts = null;
@@ -1336,6 +1647,12 @@ namespace ScumChecker
         // =========================================================
         private void AddRow(ScanItem item)
         {
+            if (IsMiscItem(item))
+            {
+                AddMiscRow(item);
+                return;
+            }
+
             if (!PassSeverityFilter(item.Severity)) return;
 
             int rowIndex = dgvFindings.Rows.Add(
@@ -1350,12 +1667,371 @@ namespace ScumChecker
             dgvFindings.Rows[rowIndex].Tag = item;
         }
 
+        private void AddMiscRow(ScanItem item)
+        {
+            if (_flowMisc == null) return;
+            var card = CreateMiscCard(item);
+            _flowMisc.Controls.Add(card);
+            RefreshMiscCardsLayout();
+            UpdateMiscStats();
+        }
+
+        private static bool IsMiscItem(ScanItem item)
+        {
+            var category = (item.Category ?? "").Trim();
+            var hay = $"{item.What} {item.Title} {item.Reason} {item.Details}".ToLowerInvariant();
+
+            if (category.Equals("Driver", StringComparison.OrdinalIgnoreCase) ||
+                category.Equals("DriverService", StringComparison.OrdinalIgnoreCase) ||
+                category.Equals("Memory", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            if (category.Equals("System", StringComparison.OrdinalIgnoreCase) &&
+                (hay.Contains("hwid") || hay.Contains("spoof") || hay.Contains("mapper")))
+            {
+                return true;
+            }
+
+            return hay.Contains("spoofer") || hay.Contains("hwid spoof");
+        }
+
         private void ApplyFilters()
         {
             dgvFindings.Rows.Clear();
             foreach (var item in _allItems)
+            {
+                if (IsMiscItem(item)) continue;
                 AddRow(item);
+            }
             dgvFindings.ClearSelection();
+        }
+
+        private void UpdateMiscStats()
+        {
+            if (_lblMiscStats == null) return;
+
+            int hi = _allItems.Count(i => IsMiscItem(i) && i.Severity == Severity.High);
+            int me = _allItems.Count(i => IsMiscItem(i) && i.Severity == Severity.Medium);
+            int lo = _allItems.Count(i => IsMiscItem(i) && i.Severity == Severity.Low);
+            _lblMiscStats.Text = $"High: {hi} | Medium: {me} | Low: {lo}";
+        }
+
+        private int GetWideCardWidth(FlowLayoutPanel? flow)
+        {
+            if (flow == null) return 880;
+            int raw = flow.ClientSize.Width - flow.Padding.Horizontal - 28;
+            return Math.Max(340, raw);
+        }
+
+        private Panel CreateMiscFieldBox(string title, string value, Color titleColor, int wrapWidth)
+        {
+            var box = new Panel
+            {
+                BackColor = Color.FromArgb(23, 23, 38),
+                Margin = new Padding(0, 0, 0, 8),
+                Padding = new Padding(10, 7, 10, 7),
+                Width = Math.Max(230, wrapWidth),
+                AutoSize = false
+            };
+            ApplyRoundedRegion(box, 10);
+
+            int innerWidth = Math.Max(180, box.Width - box.Padding.Horizontal);
+
+            var lblTitle = new Label
+            {
+                AutoSize = false,
+                Width = innerWidth,
+                Height = 20,
+                Text = title,
+                ForeColor = titleColor,
+                Font = new Font("Segoe UI Semibold", 8.7f, FontStyle.Bold),
+                Location = new Point(box.Padding.Left, box.Padding.Top)
+            };
+
+            var text = string.IsNullOrWhiteSpace(value) ? "-" : value;
+            var measured = TextRenderer.MeasureText(
+                text,
+                new Font("Segoe UI", 8.7f, FontStyle.Regular),
+                new Size(innerWidth, 2000),
+                TextFormatFlags.WordBreak);
+
+            var lblValue = new Label
+            {
+                AutoSize = false,
+                Width = innerWidth,
+                Height = Math.Max(20, measured.Height + 6),
+                Text = text,
+                ForeColor = Color.Gainsboro,
+                Font = new Font("Segoe UI", 8.7f, FontStyle.Regular),
+                Location = new Point(box.Padding.Left, lblTitle.Bottom + 2)
+            };
+
+            box.Controls.Add(lblValue);
+            box.Controls.Add(lblTitle);
+            box.Height = lblValue.Bottom + box.Padding.Bottom;
+            return box;
+        }
+
+        private Panel CreateMiscCard(ScanItem item)
+        {
+            int cardWidth = GetWideCardWidth(_flowMisc);
+            var panel = new Panel
+            {
+                Width = cardWidth,
+                Margin = new Padding(10),
+                BackColor = Color.FromArgb(18, 18, 30),
+                Padding = new Padding(12),
+                Cursor = (!string.IsNullOrWhiteSpace(item.Url) || !string.IsNullOrWhiteSpace(item.EvidencePath))
+                    ? Cursors.Hand
+                    : Cursors.Default,
+                Tag = item
+            };
+            ApplyRoundedRegion(panel, 14);
+
+            var sevColor = item.Severity switch
+            {
+                Severity.High => Color.FromArgb(225, 84, 84),
+                Severity.Medium => Color.FromArgb(232, 170, 78),
+                Severity.Low => Color.FromArgb(228, 214, 102),
+                _ => Color.FromArgb(92, 152, 255)
+            };
+
+            var badge = new Label
+            {
+                AutoSize = false,
+                Text = item.Severity.ToString().ToUpperInvariant(),
+                TextAlign = ContentAlignment.MiddleCenter,
+                ForeColor = Color.Black,
+                BackColor = sevColor,
+                Font = new Font("Segoe UI", 8.5f, FontStyle.Bold),
+                Width = 72,
+                Height = 22
+            };
+            ApplyRoundedRegion(badge, 7);
+
+            var title = new Label
+            {
+                AutoSize = true,
+                MaximumSize = new Size(Math.Max(220, cardWidth - 120), 0),
+                Text = string.IsNullOrWhiteSpace(item.What) ? item.Title : item.What,
+                ForeColor = Color.White,
+                Font = new Font("Segoe UI Semibold", 10.5f, FontStyle.Bold),
+                Margin = new Padding(0, 1, 0, 0)
+            };
+
+            var header = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Top,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                WrapContents = false,
+                FlowDirection = FlowDirection.LeftToRight,
+                BackColor = Color.Transparent,
+                Margin = new Padding(0, 0, 0, 8)
+            };
+            header.Controls.Add(badge);
+            header.Controls.Add(title);
+
+            int wrapWidth = Math.Max(220, cardWidth - 68);
+            var info = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Top,
+                AutoSize = false,
+                WrapContents = false,
+                FlowDirection = FlowDirection.TopDown,
+                BackColor = Color.Transparent,
+                Margin = new Padding(0),
+                Width = wrapWidth
+            };
+
+            info.Controls.Add(CreateMiscFieldBox(T("Категория", "Category"), item.Category ?? "", Color.FromArgb(185, 185, 205), wrapWidth));
+            info.Controls.Add(CreateMiscFieldBox(T("Причина", "Reason"), item.Reason ?? "", Color.FromArgb(255, 195, 130), wrapWidth));
+            info.Controls.Add(CreateMiscFieldBox(T("Детали", "Details"), item.Details ?? "", Color.FromArgb(200, 200, 220), wrapWidth));
+            info.Controls.Add(CreateMiscFieldBox(T("Рекомендация", "Recommendation"), item.Recommendation ?? "", Color.FromArgb(175, 205, 245), wrapWidth));
+
+            var source = !string.IsNullOrWhiteSpace(item.EvidencePath)
+                ? item.EvidencePath!
+                : (!string.IsNullOrWhiteSpace(item.Url) ? item.Url! : "");
+            info.Controls.Add(CreateMiscFieldBox(T("Источник", "Source"), source, Color.FromArgb(160, 170, 255), wrapWidth));
+
+            panel.Controls.Add(info);
+            panel.Controls.Add(header);
+            int infoHeight = info.Controls.Cast<Control>().Sum(c => c.Height + c.Margin.Vertical);
+            info.Height = Math.Max(80, infoHeight + 4);
+            panel.Height = header.PreferredSize.Height + info.Height + panel.Padding.Vertical + 10;
+
+            void OpenFromCard()
+            {
+                if (!string.IsNullOrWhiteSpace(item.Url))
+                {
+                    OpenUrl(item.Url!);
+                    return;
+                }
+
+                if (!string.IsNullOrWhiteSpace(item.EvidencePath))
+                {
+                    OpenPath(item.EvidencePath!);
+                }
+            }
+
+            panel.Click += (_, __) => OpenFromCard();
+            foreach (Control c in panel.Controls)
+            {
+                c.Click += (_, __) => OpenFromCard();
+            }
+
+            return panel;
+        }
+
+        private void RefreshMiscCardsLayout()
+        {
+            if (_flowMisc == null) return;
+            int width = GetWideCardWidth(_flowMisc);
+            var cards = _flowMisc.Controls.OfType<Panel>().ToList();
+
+            _flowMisc.SuspendLayout();
+            try
+            {
+                foreach (var card in cards)
+                {
+                    if (card.Tag is not ScanItem item) continue;
+                    var idx = _flowMisc.Controls.GetChildIndex(card);
+                    var replacement = CreateMiscCard(item);
+                    replacement.Width = width;
+                    _flowMisc.Controls.Remove(card);
+                    card.Dispose();
+                    _flowMisc.Controls.Add(replacement);
+                    _flowMisc.Controls.SetChildIndex(replacement, idx);
+                }
+            }
+            finally
+            {
+                _flowMisc.ResumeLayout(true);
+            }
+        }
+
+        private void BuildDocsCards()
+        {
+            if (_flowDocs == null) return;
+            _flowDocs.SuspendLayout();
+            try
+            {
+                _flowDocs.Controls.Clear();
+                _flowDocs.Controls.Add(CreateDocCard(
+                    T("Что сканируется", "What is scanned"),
+                    T("Процессы, файлы, prefetch/temp/appdata, Steam логины/история, системные сигналы и driver-memory индикаторы.",
+                      "Processes, files, prefetch/temp, Steam login/history, system signals, and driver-memory indicators."),
+                    Color.FromArgb(124, 180, 255)
+                ));
+                _flowDocs.Controls.Add(CreateDocCard(
+                    T("Уровни риска", "Risk levels"),
+                    T("High: сильный индикатор. Medium: требует проверки вручную. Low: слабый сигнал. Info: контекст.",
+                      "High: strong indicator. Medium: needs manual review. Low: weak signal. Info: context."),
+                    Color.FromArgb(255, 179, 86)
+                ));
+                _flowDocs.Controls.Add(CreateDocCard(
+                    T("Точность", "Accuracy"),
+                    T("Сигнатуры фильтруются: если какая то прога много чего просит до детект но учтите если софт ring 0 чекер ниче не найдет",
+                      "Signatures are context-filtered, noisy topics are moved to the Other tab, and Steam data is loaded safely with timeouts."),
+                    Color.FromArgb(146, 220, 150)
+                ));
+                _flowDocs.Controls.Add(CreateDocCard(
+                    T("Права администратора", "Administrator rights"),
+                    T("Для полного сканирования драйверов/системных путей лучше запускать от администратора: без этого чекер хенрню найдет а не софт ",
+                      "For full driver/system-path scanning, run as administrator: otherwise some data may be unavailable."),
+                    Color.FromArgb(214, 161, 255)
+                ));
+            }
+            finally
+            {
+                _flowDocs.ResumeLayout(true);
+            }
+
+            RefreshDocsCardsLayout();
+        }
+
+        private Panel CreateDocCard(string title, string body, Color accent)
+        {
+            int cardWidth = GetWideCardWidth(_flowDocs);
+            var card = new Panel
+            {
+                Width = cardWidth,
+                Margin = new Padding(10),
+                Padding = new Padding(14, 10, 14, 12),
+                BackColor = Color.FromArgb(18, 18, 30)
+            };
+            ApplyRoundedRegion(card, 14);
+
+            var top = new Panel { Name = "docAccent", Width = cardWidth - card.Padding.Horizontal, Height = 3, BackColor = accent, Location = new Point(14, 10) };
+            ApplyRoundedRegion(top, 2);
+
+            var lblTitle = new Label
+            {
+                Name = "docTitle",
+                AutoSize = true,
+                MaximumSize = new Size(Math.Max(220, cardWidth - 44), 0),
+                Location = new Point(14, 22),
+                ForeColor = Color.White,
+                Font = new Font("Segoe UI Semibold", 10.5f, FontStyle.Bold),
+                Text = title
+            };
+
+            var lblBody = new Label
+            {
+                Name = "docBody",
+                AutoSize = true,
+                MaximumSize = new Size(Math.Max(220, cardWidth - 44), 0),
+                Location = new Point(14, 48),
+                ForeColor = Color.Gainsboro,
+                Font = new Font("Segoe UI", 9f, FontStyle.Regular),
+                Text = body
+            };
+            lblBody.Location = new Point(14, lblTitle.Bottom + 6);
+
+            card.Controls.Add(top);
+            card.Controls.Add(lblTitle);
+            card.Controls.Add(lblBody);
+            card.Height = lblBody.Bottom + 12;
+            return card;
+        }
+
+        private void RefreshDocsCardsLayout()
+        {
+            if (_flowDocs == null) return;
+            int width = GetWideCardWidth(_flowDocs);
+            _flowDocs.SuspendLayout();
+            try
+            {
+                foreach (Control c in _flowDocs.Controls)
+                {
+                    if (c is not Panel card || card.Controls.Count < 3) continue;
+                    card.Width = width;
+                    var top = card.Controls.Find("docAccent", false).FirstOrDefault() as Panel;
+                    var title = card.Controls.Find("docTitle", false).FirstOrDefault() as Label;
+                    var body = card.Controls.Find("docBody", false).FirstOrDefault() as Label;
+
+                    if (top != null)
+                    {
+                        top.Width = Math.Max(100, width - card.Padding.Horizontal);
+                    }
+                    if (title != null)
+                    {
+                        title.MaximumSize = new Size(Math.Max(220, width - 44), 0);
+                    }
+                    if (body != null)
+                    {
+                        body.Location = new Point(14, (title?.Bottom ?? 26) + 6);
+                        body.MaximumSize = new Size(Math.Max(220, width - 44), 0);
+                        card.Height = body.Bottom + 12;
+                    }
+                }
+            }
+            finally
+            {
+                _flowDocs.ResumeLayout(true);
+            }
         }
 
         private bool PassSeverityFilter(Severity s) => s switch
@@ -1540,6 +2216,135 @@ namespace ScumChecker
             return card;
         }
 
+        private static bool IsSteamAccountItem(ScanItem item)
+        {
+            if (!item.Category.Equals("Steam", StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            return item.What.Equals("Steam account", StringComparison.OrdinalIgnoreCase) ||
+                   item.Title.Equals("Steam account", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private void ShowSteamLoadingState()
+        {
+            if (_flowSteam == null) return;
+
+            SafeUi(() =>
+            {
+                _flowSteam.Controls.Clear();
+                _steamCardsById.Clear();
+                var loading = CreateSteamCard();
+                loading.SetHeader(T("Загрузка Steam…", "Loading Steam…"), null);
+                loading.ClearRows();
+                loading.AddRow(T("Аккаунты загружаются без общего скана", "Accounts load without full scan"), null);
+                _flowSteam.Controls.Add(loading);
+            });
+        }
+
+        private static bool TryParseSteamAccountItem(
+            ScanItem item,
+            out string steamId,
+            out string account,
+            out string mostRecent,
+            out string timestamp)
+        {
+            steamId = "";
+            account = "";
+            mostRecent = "";
+            timestamp = "";
+
+            if (!IsSteamAccountItem(item))
+                return false;
+
+            if (!string.IsNullOrWhiteSpace(item.Url))
+            {
+                var url = item.Url.TrimEnd('/');
+                var idx = url.LastIndexOf('/');
+                steamId = idx >= 0 ? url[(idx + 1)..] : url;
+            }
+            if (string.IsNullOrWhiteSpace(steamId)) return false;
+
+            var parts = (item.Details ?? "")
+                .Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (parts.Length > 0) account = parts[0];
+
+            foreach (var p in parts)
+            {
+                if (p.StartsWith("MostRecent=", StringComparison.OrdinalIgnoreCase))
+                    mostRecent = p["MostRecent=".Length..].Trim();
+                else if (p.StartsWith("Timestamp=", StringComparison.OrdinalIgnoreCase))
+                    timestamp = p["Timestamp=".Length..].Trim();
+            }
+
+            return true;
+        }
+
+        private void UpsertSteamCardFromItem(ScanItem item)
+        {
+            if (_flowSteam == null) return;
+            if (!TryParseSteamAccountItem(item, out var steamId, out var account, out var mostRecent, out var timestamp))
+                return;
+
+            SafeUi(() =>
+            {
+                if (_flowSteam == null) return;
+
+                if (_steamCardsById.Count == 0 && _flowSteam.Controls.Count == 1 && _flowSteam.Controls[0] is SteamAccountCard)
+                {
+                    _flowSteam.Controls.Clear();
+                }
+
+                if (!_steamCardsById.TryGetValue(steamId, out var card))
+                {
+                    card = CreateSteamCard();
+                    _steamCardsById[steamId] = card;
+                    _flowSteam.Controls.Add(card);
+                }
+                bool needFetch = card.Tag is not string existingId ||
+                                 !existingId.Equals(steamId, StringComparison.OrdinalIgnoreCase);
+
+                // Немедленно даем локальную инфу, не ждём сеть.
+                card.SetHeader(account, null);
+                card.ClearRows();
+                card.AddRow($"{T("Аккаунт", "Account")}: {account}", null);
+                card.AddRow($"{T("Последний вход", "Last logon")}: {timestamp}", null);
+                card.AddRow($"{T("MostRecent", "MostRecent")}: {mostRecent}", null);
+                card.AddRow(T("Получаю данные профиля/банов…", "Fetching profile/ban data…"), null);
+
+                if (needFetch)
+                    _ = FillOneCardAsync(card, steamId, account, timestamp);
+            });
+        }
+
+        private async Task ScheduleSteamCardsRefreshAsync()
+        {
+            if (Interlocked.Exchange(ref _steamRefreshScheduled, 1) == 1)
+                return;
+
+            try
+            {
+                // Небольшая задержка, чтобы сгруппировать burst событий ItemFound.
+                await Task.Delay(180).ConfigureAwait(false);
+                await _steamRefreshLock.WaitAsync().ConfigureAwait(false);
+                try
+                {
+                    await RefreshSteamCardsAsync().ConfigureAwait(false);
+                }
+                finally
+                {
+                    _steamRefreshLock.Release();
+                }
+            }
+            catch
+            {
+                // ignore UI refresh errors
+            }
+            finally
+            {
+                Interlocked.Exchange(ref _steamRefreshScheduled, 0);
+            }
+        }
+
         private async Task RefreshSteamCardsAsync()
         {
             if (_flowSteam == null) return;
@@ -1551,7 +2356,7 @@ namespace ScumChecker
 
                 var accounts = new List<(string steamId, string account, string mostRecent, string timestamp)>();
 
-                foreach (var it in _allItems)
+                foreach (var it in _steamItems)
                 {
                     if (it.Category != "Steam") continue;
                     if (it.What != "Steam account" && it.Title != "Steam account") continue;
@@ -1583,6 +2388,22 @@ namespace ScumChecker
                     accounts.Add((steamId, account, mostRecent, timestamp));
                 }
 
+                accounts = accounts
+                    .GroupBy(a => a.steamId, StringComparer.OrdinalIgnoreCase)
+                    .Select(g =>
+                    {
+                        var preferred = g.FirstOrDefault(x => x.mostRecent.Equals("1", StringComparison.OrdinalIgnoreCase) ||
+                                                              x.mostRecent.Equals("true", StringComparison.OrdinalIgnoreCase));
+                        if (!string.IsNullOrWhiteSpace(preferred.steamId))
+                            return preferred;
+
+                        long BestTs((string steamId, string account, string mostRecent, string timestamp) x)
+                            => long.TryParse(x.timestamp, out var n) ? n : 0L;
+
+                        return g.OrderByDescending(BestTs).First();
+                    })
+                    .ToList();
+
                 if (accounts.Count == 0)
                 {
                     var empty = CreateSteamCard();
@@ -1605,6 +2426,7 @@ namespace ScumChecker
                 {
                     var card = CreateSteamCard();
                     cards.Add((card, a.steamId, a.account, a.timestamp));
+                    _steamCardsById[a.steamId] = card;
                     SafeUi(() => _flowSteam.Controls.Add(card));
                 }
 
@@ -1615,11 +2437,8 @@ namespace ScumChecker
                     _flowSteam.SuspendLayout();
                 });
 
-                await FillOneCardAsync(cards[0].card, cards[0].id, cards[0].acc, cards[0].ts);
-
-                for (int i = 1; i < cards.Count; i++)
+                foreach (var c in cards)
                 {
-                    var c = cards[i];
                     _ = FillOneCardAsync(c.card, c.id, c.acc, c.ts);
                 }
             }
@@ -1682,7 +2501,13 @@ namespace ScumChecker
         private async Task FillOneCardAsync(SteamAccountCard card, string steamId64, string accountName, string timestamp)
         {
             SteamProfileScraper.SteamProfileLite? prof = null;
-            try { prof = await SteamProfileScraper.GetProfileLiteAsync(steamId64); } catch { }
+            try
+            {
+                prof = await WithTimeout(
+                    SteamProfileScraper.GetProfileLiteAsync(steamId64),
+                    TimeSpan.FromSeconds(7));
+            }
+            catch { }
 
             Image? avatar = null;
             if (prof?.AvatarUrl != null)
@@ -1698,7 +2523,12 @@ namespace ScumChecker
             }
 
             SteamApi.BanLite bans;
-            try { bans = await SteamApi.GetBansNoKeyAsync(steamId64); }
+            try
+            {
+                bans = await WithTimeout(
+                    SteamApi.GetBansNoKeyAsync(steamId64),
+                    TimeSpan.FromSeconds(8));
+            }
             catch { bans = SteamApi.BanLite.UnknownResult(); }
 
             SafeUi(() =>
@@ -1728,6 +2558,20 @@ namespace ScumChecker
                 card.PerformLayout();
                 card.Invalidate();
             });
+        }
+
+        private static async Task<T> WithTimeout<T>(Task<T> task, TimeSpan timeout)
+        {
+            using var cts = new CancellationTokenSource();
+            var delay = Task.Delay(timeout, cts.Token);
+            var completed = await Task.WhenAny(task, delay).ConfigureAwait(false);
+            if (completed == task)
+            {
+                cts.Cancel();
+                return await task.ConfigureAwait(false);
+            }
+
+            throw new TimeoutException();
         }
 
         private void Card_Click(object? sender, EventArgs e)
@@ -1842,6 +2686,35 @@ namespace ScumChecker
             b.Padding = new Padding(leftPad, 0, 10, 0);
         }
 
+        private static GraphicsPath CreateRoundedPath(Rectangle rect, int radius)
+        {
+            var path = new GraphicsPath();
+            int r = Math.Max(1, radius);
+            int d = r * 2;
+            path.AddArc(rect.X, rect.Y, d, d, 180, 90);
+            path.AddArc(rect.Right - d, rect.Y, d, d, 270, 90);
+            path.AddArc(rect.Right - d, rect.Bottom - d, d, d, 0, 90);
+            path.AddArc(rect.X, rect.Bottom - d, d, d, 90, 90);
+            path.CloseFigure();
+            return path;
+        }
+
+        private static void ApplyRoundedRegion(Control control, int radius)
+        {
+            void UpdateRegion()
+            {
+                if (control.Width <= 2 || control.Height <= 2) return;
+                using var path = CreateRoundedPath(new Rectangle(0, 0, control.Width - 1, control.Height - 1), radius);
+                var old = control.Region;
+                control.Region = new Region(path);
+                old?.Dispose();
+            }
+
+            control.HandleCreated += (_, __) => UpdateRegion();
+            control.SizeChanged += (_, __) => UpdateRegion();
+            UpdateRegion();
+        }
+
         // =========================================================
         // HELPERS
         // =========================================================
@@ -1903,12 +2776,12 @@ namespace ScumChecker
 
         private void Git_button_Click(object sender, EventArgs e)
         {
-            OpenUrl("https://e-z.bio/nezeryxs");
+            OpenUrl("https://e-z.bio/");
         }
 
         private void ezka_button_Click(object sender, EventArgs e)
         {
-            OpenUrl("https://github.com/Nezeryxs");
+            OpenUrl("https://astryxclient.com/");
         }
 
         private void panelFooter_Paint(object sender, PaintEventArgs e)

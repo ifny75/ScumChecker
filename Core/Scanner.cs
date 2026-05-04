@@ -1,6 +1,5 @@
-﻿using System;
+using System;
 using System.Threading;
-using ScumChecker.Core.Modules;
 using ScumChecker.Core.Modules;
 
 namespace ScumChecker.Core
@@ -24,11 +23,10 @@ namespace ScumChecker.Core
 
             IScanModule[] modules =
             [
+                new ProcessesModule(),
+                new NativeDriverMemoryModule(),
                 new HwidModule(),
-        new SteamAccountsModule(),
-        new ProcessesModule(),
-        new SuspiciousFilesModule(),
-    ];
+            ];
 
             EmitLog($"Modules: {modules.Length}");
 
