@@ -33,13 +33,16 @@ namespace ScumChecker.Core.Modules
             "chams", "norecoil", "no recoil", "nospread", "no spread",
             "bhop", "bunnyhop", "speedhack", "flyhack",
             "noclip", "freecam", "hitbox", "magic bullet",
+            "aim assist", "aimassist", "softaim", "ragebot", "spinbot",
 
             // macros
             "autoclicker", "auto clicker", "autofire", "auto fire",
-            "recoil macro", "no recoil macro", "macros", "macro",
+            "recoil macro", "no recoil macro", "rapidfire", "rapid fire",
+            "macros", "macro", "macro script",
 
             // unban / unlock
-            "unban", "unlocker", "unlock all", "vac bypass", "vac bypasser"
+            "unban", "unlocker", "unlock all", "vac bypass", "vac bypasser",
+            "cheat", "hack", "trainer"
         ];
 
         // SCUM бренды/триггеры
@@ -70,7 +73,12 @@ namespace ScumChecker.Core.Modules
             "scum teleport",
             "scum hwid spoofer",
             "scum unban",
-            "scum undetected"
+            "scum undetected",
+            "scum cheat",
+            "scum hack",
+            "scum external",
+            "scum internal",
+            "scum dma"
         ];
 
         // dev/reverse инструменты
@@ -88,6 +96,7 @@ namespace ScumChecker.Core.Modules
         [
             "ingram", "shack", "pheonix", "aj", "arcane", "baunt", "mason",
             "hyper", "dma", "external", "xone", "interium", "midnight", "loader",
+            "ragebot", "spinbot", "aimbot"
         ];
 
         private static readonly string[] ConfigTokens =

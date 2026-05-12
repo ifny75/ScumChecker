@@ -61,6 +61,14 @@ namespace ScumChecker.Core.Modules
                 Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads"),
                 DefaultMaxDepth
             );
+            yield return new RootScan(
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Saved Games"),
+                DefaultMaxDepth
+            );
+            yield return new RootScan(
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "My Games"),
+                DefaultMaxDepth
+            );
 
             yield return new RootScan(
                 Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Saved Games"),
