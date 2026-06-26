@@ -1,0 +1,36 @@
+# Visual Studio
+.vs/
+*.user
+*.suo
+
+# Build results
+bin/
+obj/
+build_native_scanner/
+build*/
+CMakeFiles/
+CMakeCache.txt
+*.tlog
+*.obj
+*.pdb
+*.ilk
+*.exp
+*.lib
+
+# Rider
+.idea/
+
+# Logs
+*.log
+
+# OS junk
+Thumbs.db
+.DS_Store
+
+# NuGet
+packages/
+
+# Publish
+publish/
+publish*/
+release*/

@@ -1,0 +1,23 @@
+{
+  "strings": [
+    "cheat",
+    "inject",
+    "esp",
+    "wallhack",
+    "aimbot",
+    "trigger",
+    "spoof",
+    "mapper",
+    "kdmapper",
+    "iqvw64e"
+  ],
+  "paths": [
+    "\\temp\\",
+    "\\appdata\\",
+    "\\local\\temp\\",
+    "\\users\\public\\",
+    "\\programdata\\"
+  ],
+  "hashes": [
+  ]
+}
