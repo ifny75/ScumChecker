@@ -1,4 +1,5 @@
 # ScumChecker
+# ScumCheckerV2 - https://github.com/ifny75/ScumCheckerV2
 
 ![GitHub release](https://img.shields.io/github/v/release/ifny75/ScumChecker?style=flat-square)
 ![GitHub downloads](https://img.shields.io/github/downloads/ifny75/ScumChecker/total?style=flat-square)
